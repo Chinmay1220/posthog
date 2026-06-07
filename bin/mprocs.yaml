@@ -544,6 +544,14 @@ procs:
             layer: Product services
             tech: Go
 
+    agent-proxy:
+        shell: 'bin/wait-for-docker --only redis7 && pnpm --filter @posthog/agent-proxy dev'
+        capability: agent_proxy
+        ready_pattern: 'server:started'
+        groups:
+            layer: Product services
+            tech: Node
+
     mcp:
         sandbox: true
         shell: 'bin/start-mcp-server'
