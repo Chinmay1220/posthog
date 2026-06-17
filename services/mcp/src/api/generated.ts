@@ -18124,12 +18124,8 @@ export namespace Schemas {
       filters: unknown;
       /** @nullable */
       readonly assignee: ErrorTrackingAssignmentRuleAssignee;
-      /**
-         * @minimum -2147483648
-         * @maximum 2147483647
-         */
       order_key: number;
-      disabled_data?: unknown;
+      disabled_data: unknown;
       readonly created_at: string;
       readonly updated_at: string;
     }
@@ -18268,18 +18264,14 @@ export namespace Schemas {
       /** @nullable */
       readonly assignee: ErrorTrackingGroupingRuleAssignee;
       /** @nullable */
-      description?: string | null;
+      description: string | null;
       /**
          * Issue linked to this rule
          * @nullable
          */
       readonly issue: ErrorTrackingGroupingRuleIssue;
-      /**
-         * @minimum -2147483648
-         * @maximum 2147483647
-         */
       order_key: number;
-      disabled_data?: unknown;
+      disabled_data: unknown;
       readonly created_at: string;
       readonly updated_at: string;
     }
@@ -18912,12 +18904,18 @@ export namespace Schemas {
       readonly updated_at: string;
     }
 
+    /**
+     * @nullable
+     */
+    export type ErrorTrackingReleaseMetadata = { [key: string]: unknown } | null;
+
     export interface ErrorTrackingRelease {
-      readonly id: string;
+      id: string;
       hash_id: string;
-      readonly team_id: number;
-      readonly created_at: string;
-      metadata?: unknown;
+      team_id: number;
+      created_at: string;
+      /** @nullable */
+      metadata: ErrorTrackingReleaseMetadata;
       version: string;
       project: string;
     }
@@ -19018,43 +19016,47 @@ export namespace Schemas {
     }
 
     export interface ErrorTrackingSpikeEventIssue {
-      readonly id: string;
+      id: string;
       /** @nullable */
-      readonly name: string | null;
+      name: string | null;
       /** @nullable */
-      readonly description: string | null;
+      description: string | null;
     }
 
     export interface ErrorTrackingSpikeEvent {
-      readonly id: string;
-      readonly issue: ErrorTrackingSpikeEventIssue;
-      readonly detected_at: string;
-      readonly computed_baseline: number;
-      readonly current_bucket_value: number;
+      id: string;
+      issue: ErrorTrackingSpikeEventIssue;
+      detected_at: string;
+      computed_baseline: number;
+      current_bucket_value: number;
     }
 
+    export type ErrorTrackingStackFrameContents = { [key: string]: unknown };
+
+    /**
+     * @nullable
+     */
+    export type ErrorTrackingStackFrameContext = { [key: string]: unknown } | null;
+
     export interface ErrorTrackingStackFrame {
-      readonly id: string;
-      /** Raw frame ID in 'hash/part' format */
-      readonly raw_id: string;
-      readonly created_at: string;
-      contents: unknown;
+      id: string;
+      raw_id: string;
+      created_at: string;
+      contents: ErrorTrackingStackFrameContents;
       resolved: boolean;
-      context?: unknown;
-      symbol_set_ref?: string;
-      readonly release: ErrorTrackingRelease;
+      /** @nullable */
+      context: ErrorTrackingStackFrameContext;
+      /** @nullable */
+      symbol_set_ref: string | null;
+      release: ErrorTrackingRelease | null;
     }
 
     export interface ErrorTrackingSuppressionRule {
       readonly id: string;
       filters: unknown;
-      /**
-         * @minimum -2147483648
-         * @maximum 2147483647
-         */
       order_key: number;
-      disabled_data?: unknown;
-      sampling_rate?: number;
+      disabled_data: unknown;
+      sampling_rate: number;
       readonly created_at: string;
       readonly updated_at: string;
     }
@@ -34357,10 +34359,6 @@ export namespace Schemas {
       filters?: unknown;
       /** @nullable */
       readonly assignee?: PatchedErrorTrackingAssignmentRuleAssignee;
-      /**
-         * @minimum -2147483648
-         * @maximum 2147483647
-         */
       order_key?: number;
       disabled_data?: unknown;
       readonly created_at?: string;
@@ -34400,10 +34398,6 @@ export namespace Schemas {
          * @nullable
          */
       readonly issue?: PatchedErrorTrackingGroupingRuleIssue;
-      /**
-         * @minimum -2147483648
-         * @maximum 2147483647
-         */
       order_key?: number;
       disabled_data?: unknown;
       readonly created_at?: string;
@@ -34456,12 +34450,18 @@ export namespace Schemas {
       description?: string | null;
     }
 
+    /**
+     * @nullable
+     */
+    export type PatchedErrorTrackingReleaseMetadata = { [key: string]: unknown } | null;
+
     export interface PatchedErrorTrackingRelease {
-      readonly id?: string;
+      id?: string;
       hash_id?: string;
-      readonly team_id?: number;
-      readonly created_at?: string;
-      metadata?: unknown;
+      team_id?: number;
+      created_at?: string;
+      /** @nullable */
+      metadata?: PatchedErrorTrackingReleaseMetadata;
       version?: string;
       project?: string;
     }
@@ -34514,10 +34514,6 @@ export namespace Schemas {
     export interface PatchedErrorTrackingSuppressionRule {
       readonly id?: string;
       filters?: unknown;
-      /**
-         * @minimum -2147483648
-         * @maximum 2147483647
-         */
       order_key?: number;
       disabled_data?: unknown;
       sampling_rate?: number;
@@ -50811,6 +50807,17 @@ export namespace Schemas {
     repository: string;
     };
 
+    export type EnvironmentsErrorTrackingGroupingRulesListParams = {
+    /**
+     * Number of results to return per page.
+     */
+    limit?: number;
+    /**
+     * The initial index from which to return the results.
+     */
+    offset?: number;
+    };
+
     export type EnvironmentsErrorTrackingIssuesListParams = {
     /**
      * Number of results to return per page.
@@ -56644,6 +56651,17 @@ export namespace Schemas {
      * @minLength 1
      */
     repository: string;
+    };
+
+    export type ErrorTrackingGroupingRulesListParams = {
+    /**
+     * Number of results to return per page.
+     */
+    limit?: number;
+    /**
+     * The initial index from which to return the results.
+     */
+    offset?: number;
     };
 
     export type ErrorTrackingIssuesListParams = {
