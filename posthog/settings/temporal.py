@@ -47,6 +47,15 @@ SANDBOX_API_URL: str | None = get_from_env("SANDBOX_API_URL", None, optional=Tru
 SANDBOX_LLM_GATEWAY_URL: str | None = get_from_env("SANDBOX_LLM_GATEWAY_URL", None, optional=True)
 SANDBOX_MCP_URL: str | None = get_from_env("SANDBOX_MCP_URL", None, optional=True)
 
+# Route AI-observability clustering LLM calls through the ai-gateway. When both are
+# set, the labeling agents talk to the gateway's OpenAI-compatible endpoint
+# (slugless /v1/chat/completions) authenticated with a phs_ project secret bearer,
+# from which the gateway derives the team. Unset (the default): calls go straight to
+# OpenAI with OPENAI_API_KEY, so flipping these two env vars is the whole cutover.
+# The URL must include the OpenAI base path, e.g. https://<gateway-host>/v1.
+LLMA_GATEWAY_URL: str | None = get_from_env("LLMA_GATEWAY_URL", None, optional=True)
+LLMA_GATEWAY_API_KEY: str | None = get_from_env("LLMA_GATEWAY_API_KEY", None, optional=True)
+
 # When True, cloud-to-cloud resume boots from a Modal filesystem snapshot taken at
 # end-of-run. When False, no Modal snapshot is taken and resume relies on the
 # git-checkpoint mechanism in the agent server (same path as local-to-cloud handoff).
