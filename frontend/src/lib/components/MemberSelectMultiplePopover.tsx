@@ -4,7 +4,7 @@ import { LemonDropdown, ProfilePicture } from '@posthog/lemon-ui'
 
 import { LemonButton } from 'lib/lemon-ui/LemonButton'
 import { LemonInput } from 'lib/lemon-ui/LemonInput/LemonInput'
-import { fullName } from 'lib/utils'
+import { fullName } from 'lib/utils/strings'
 import { membersLogic } from 'scenes/organization/membersLogic'
 
 export type MemberSelectMultiplePopoverProps = {

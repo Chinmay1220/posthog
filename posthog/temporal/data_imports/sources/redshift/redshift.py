@@ -742,6 +742,15 @@ class RedshiftImplementation(SQLSourceImplementation[RedshiftSourceConfig, psyco
         except psycopg.errors.QueryCanceled:
             raise
         except Exception as e:
+            # A Redshift system-requested query abort (error code 1020, "system requested abort")
+            # is the cluster's WLM/QMR cancelling the query — the same transient, non-actionable
+            # class as `QueryCanceled`, which psycopg surfaces here as `InternalError_` rather than
+            # `QueryCanceled`. The duplicate-PK check is best-effort (the caller defaults to no
+            # duplicates), so skip gracefully instead of reporting an expected, non-actionable error
+            # to error tracking. Mirrors the graceful-skip probes elsewhere in this driver.
+            if "system requested abort" in str(e):
+                logger.debug(f"has_duplicate_primary_keys: query aborted by Redshift, skipping check: {e}")
+                return False
             capture_exception(e)
             return False
 
@@ -863,6 +872,13 @@ class RedshiftImplementation(SQLSourceImplementation[RedshiftSourceConfig, psyco
             result = cursor.fetchone()
         except psycopg.errors.QueryCanceled:
             raise
+        except psycopg.errors.InsufficientPrivilege as e:
+            # Some Redshift roles aren't granted access to the `svv_table_info` system view. That's
+            # a customer permission-config issue, not an actionable bug — table stats are optional
+            # (we fall back to no partitioning), so skip gracefully without reporting the expected,
+            # non-actionable error to error tracking. Mirrors `_explain_query`/`get_row_counts`.
+            logger.debug(f"fetch_table_stats: no access to svv_table_info, returning None: {e}")
+            return None
         except Exception as e:
             capture_exception(e)
             logger.debug(f"fetch_table_stats: returning None due to error: {e}")
@@ -894,6 +910,10 @@ class RedshiftImplementation(SQLSourceImplementation[RedshiftSourceConfig, psyco
         already bound — no separate `inner_query_args` is interpolated
         here, mirroring how the rest of the Redshift driver builds
         queries.
+
+        Best-effort only: Redshift rejects the `pg_column_size(t)` whole-row reference, so this
+        currently returns None on every table and the caller falls back to the default chunk size.
+        Failures are swallowed rather than reported — see the except block below.
         """
         try:
             query = sql.SQL("""
@@ -915,8 +935,13 @@ class RedshiftImplementation(SQLSourceImplementation[RedshiftSourceConfig, psyco
         except psycopg.errors.QueryCanceled:
             raise
         except Exception as e:
+            # Best-effort sampling: any failure falls back to the default chunk size, so it must not
+            # be reported to error tracking. Redshift has no portable whole-row size — `pg_column_size(t)`
+            # (like Postgres' `octet_length(t::text)`) relies on a composite whole-row reference that
+            # Redshift rejects with `UndefinedColumn: column "t" does not exist in t`, so this fails on
+            # every table. Mirrors the sibling Postgres `_get_table_chunk_size` and `_explain_query` here,
+            # both of which treat this as expected, non-actionable noise.
             logger.debug(f"fetch_average_row_size: Error: {e}", exc_info=e)
-            capture_exception(e)
             return None
 
     # ------------------------------------------------------------------
