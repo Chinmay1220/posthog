@@ -123,8 +123,6 @@ export function InsightDisplayConfig(): JSX.Element {
 
     const funnelsCompareEnabled = !!featureFlags[FEATURE_FLAGS.PRODUCT_ANALYTICS_FUNNELS_COMPARE]
 
-    // Metric (single value + sparkline) and slope graph (two endpoints) have no continuous axes/scale/lines, so
-    // like the non-time-series displays they hide the continuous-chart options even though their data is time-series.
     const isMetric = display === ChartDisplayType.Metric
     const hideContinuousChartOptions = isNonTimeSeriesDisplay || isMetric || isSlopeGraph
     const showCompare =
@@ -132,8 +130,6 @@ export function InsightDisplayConfig(): JSX.Element {
             display !== ChartDisplayType.ActionsAreaGraph &&
             display !== ChartDisplayType.CalendarHeatmap &&
             display !== ChartDisplayType.BoxPlot &&
-            // Metric derives its change pill from its own series and slope graph plots two fixed endpoints, so
-            // neither needs the compare-to-previous control.
             !isMetric &&
             !isSlopeGraph) ||
         isStickiness ||
