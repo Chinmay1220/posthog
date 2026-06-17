@@ -3240,11 +3240,6 @@ class DetailedResultsAggregationType(StrEnum):
     MEDIAN = "median"
 
 
-class MetricGoodDirection(StrEnum):
-    UP = "up"
-    DOWN = "down"
-
-
 class UsageMetricDisplay(StrEnum):
     NUMBER = "number"
     SPARKLINE = "sparkline"
