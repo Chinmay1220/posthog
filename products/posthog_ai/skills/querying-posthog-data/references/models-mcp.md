@@ -77,7 +77,7 @@ GROUP BY day ORDER BY day
 
 ### Harness (client) bucketing
 
-`$mcp_client_name` is the raw client string the MCP client sends (`claude-code/1.2.3`, `Anthropic/ClaudeAI`, `windsurf`, sometimes with a `(via mcp-remote …)` suffix). A bare `GROUP BY properties.$mcp_client_name` therefore fragments a single harness across version/variant strings. To group by harness, normalize the raw client name in an inner subquery, then bucket it with `multiIf`. This mapping mirrors `HARNESS_CATEGORIES` / `categorizeHarness()` in `products/mcp_analytics/frontend/mcpDashboardOverviewLogic.ts` — keep the two in sync until a materialized `$mcp_harness` property exists. (HogQL has no `WITH <expr> AS alias`, so the normalized name `h` is computed in a subquery, not a CTE.)
+`$mcp_client_name` is the raw client string the MCP client sends (`claude-code/1.2.3`, `Anthropic/ClaudeAI`, `windsurf`, sometimes with a `(via mcp-remote …)` suffix), but newer Anthropic clients stopped sending it — they report identity only via the `x-anthropic-client` header (`mcp_vendor_client`: `ClaudeCode`, `ClaudeAI`, `Cowork`, `ClaudeDesign`) or the User-Agent (`$mcp_client_user_agent`). Grouping on `$mcp_client_name` alone therefore drops nearly all Claude traffic into "Other". Resolve an effective client first — prefer `$mcp_client_name`, then the vendor header normalized to the same tokens, then the leading User-Agent product token (everything before the first `/`, which strips the version) — then bucket it with `multiIf`. A bare `GROUP BY properties.$mcp_client_name` also fragments a single harness across version/variant strings, which the normalization folds back together. This mapping mirrors `HARNESS_CATEGORIES` / `categorizeHarness()` in `products/mcp_analytics/frontend/mcpDashboardOverviewLogic.ts` — keep the two in sync until a materialized `$mcp_harness` property exists. (HogQL has no `WITH <expr> AS alias`, so the normalized name `h` is computed in a subquery, not a CTE.)
 
 **Share of users by harness** (answers "what % of my users are on Claude Code"):
 
@@ -96,6 +96,8 @@ FROM (
             startsWith(h, 'claude-code'), 'Claude Code',
             h IN ('claude-ai', 'anthropic/claudeai'), 'Claude.ai',
             h = 'anthropic/api', 'Anthropic API',
+            h = 'cowork', 'Cowork',
+            h = 'claude-design', 'Claude Design',
             startsWith(h, 'codex') OR startsWith(h, 'openai-mcp'), 'OpenAI Codex',
             startsWith(h, 'cursor'), 'Cursor',
             startsWith(h, 'visual studio code'), 'VS Code',
@@ -114,7 +116,20 @@ FROM (
     FROM (
         SELECT
             distinct_id,
-            lower(trim(replaceRegexpOne(toString(properties.$mcp_client_name), '\\s*\\(via mcp-remote[^)]*\\)\\s*', ''))) AS h
+            lower(trim(replaceRegexpOne(
+                coalesce(
+                    nullIf(toString(properties.$mcp_client_name), ''),
+                    multiIf(
+                        toString(properties.mcp_vendor_client) = 'ClaudeCode', 'claude-code',
+                        toString(properties.mcp_vendor_client) = 'ClaudeAI', 'claude-ai',
+                        toString(properties.mcp_vendor_client) = 'Cowork', 'cowork',
+                        toString(properties.mcp_vendor_client) = 'ClaudeDesign', 'claude-design',
+                        nullIf(toString(properties.mcp_vendor_client), '')
+                    ),
+                    nullIf(extract(toString(properties.$mcp_client_user_agent), '^([^/]+)'), ''),
+                    ''
+                ),
+                '\\s*\\(via mcp-remote[^)]*\\)\\s*', ''))) AS h
         FROM events
         WHERE event = 'mcp_tool_call' AND timestamp >= now() - INTERVAL 30 DAY
     )

@@ -13,6 +13,8 @@ interface HarnessLogo {
 export const HARNESS_LOGOS: Record<string, HarnessLogo> = {
     'Claude Code': { src: claudeLogo, alt: 'Claude Code logo' },
     'Claude.ai': { src: claudeLogo, alt: 'Claude.ai logo' },
+    Cowork: { src: claudeLogo, alt: 'Cowork logo' },
+    'Claude Design': { src: claudeLogo, alt: 'Claude Design logo' },
     'OpenAI Codex': { src: openaiLogo, alt: 'OpenAI Codex logo' },
     Cursor: { src: cursorLogo, alt: 'Cursor logo' },
     'VS Code': { src: vscodeLogo, alt: 'VS Code logo' },
@@ -23,6 +25,8 @@ export const HARNESS_LOGOS: Record<string, HarnessLogo> = {
 const HARNESS_SLICE_COLOR_INDEX: Record<string, number> = {
     'Claude Code': 0,
     'Claude.ai': 2,
+    Cowork: 3,
+    'Claude Design': 4,
     'OpenAI Codex': 1,
     Cursor: 12,
     'VS Code': 11,

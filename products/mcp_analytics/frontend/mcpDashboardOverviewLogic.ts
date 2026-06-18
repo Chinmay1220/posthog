@@ -85,16 +85,32 @@ ORDER BY total_calls DESC
 LIMIT 50
 `
 
+// Newer Anthropic clients stopped sending clientInfo.name ($mcp_client_name) and
+// now report identity only via the x-anthropic-client header (mcp_vendor_client)
+// or the User-Agent, so reading $mcp_client_name alone buckets nearly everything
+// as "Other". Resolve an effective client per call: prefer the self-reported
+// name, then the vendor header normalized to the tokens categorizeHarness
+// expects, then the leading User-Agent product token (everything before the
+// first "/", which drops the version so claude-code/2.1.x folds to one bucket).
 const HARNESS_ROWS_QUERY = `
 SELECT
-    toString(properties.$mcp_client_name) AS client,
+    coalesce(
+        nullIf(toString(properties.$mcp_client_name), ''),
+        multiIf(
+            toString(properties.mcp_vendor_client) = 'ClaudeCode', 'claude-code',
+            toString(properties.mcp_vendor_client) = 'ClaudeAI', 'claude-ai',
+            toString(properties.mcp_vendor_client) = 'Cowork', 'cowork',
+            toString(properties.mcp_vendor_client) = 'ClaudeDesign', 'claude-design',
+            nullIf(toString(properties.mcp_vendor_client), '')
+        ),
+        nullIf(extract(toString(properties.$mcp_client_user_agent), '^([^/]+)'), ''),
+        ''
+    ) AS client,
     count() AS total_calls,
     countIf(toBool(properties.$mcp_is_error)) AS errors,
     countDistinctIf(toString(properties.$mcp_session_id), toString(properties.$mcp_session_id) != '') AS sessions
 FROM events
 WHERE event = 'mcp_tool_call'
-    AND properties.$mcp_client_name IS NOT NULL
-    AND properties.$mcp_client_name != ''
     AND {filters}
 GROUP BY client
 ORDER BY total_calls DESC
@@ -231,8 +247,9 @@ const EMPTY_KPIS: KPIData = {
     p95LatencyMs: { ...EMPTY_METRIC, goodDirection: 'down' },
 }
 
-// Harness categories derived from sampling the top 50 distinct $mcp_client_name
-// values seen in production over the past 30 days. We normalize the
+// Harness categories derived from sampling the top distinct client identifiers
+// seen in production (clientInfo.name, the x-anthropic-client vendor header, and
+// User-Agent product tokens) over the past 30 days. We normalize the
 // "(via mcp-remote …)" suffix that mcp-remote injects so the underlying client
 // folds into its real harness bucket.
 const HARNESS_CATEGORIES: { category: string; match: (name: string) => boolean }[] = [
@@ -242,6 +259,8 @@ const HARNESS_CATEGORIES: { category: string; match: (name: string) => boolean }
         match: (n) => n === 'claude-ai' || n === 'anthropic/claudeai',
     },
     { category: 'Anthropic API', match: (n) => n === 'anthropic/api' },
+    { category: 'Cowork', match: (n) => n === 'cowork' },
+    { category: 'Claude Design', match: (n) => n === 'claude-design' },
     {
         category: 'OpenAI Codex',
         match: (n) => n.startsWith('codex') || n.startsWith('openai-mcp'),

@@ -46,6 +46,8 @@ describe('mcpDashboardOverviewLogic', () => {
             ['claude-code/1.0.0', 'Claude Code'],
             ['claude-ai', 'Claude.ai'],
             ['anthropic/claudeai', 'Claude.ai'],
+            ['cowork', 'Cowork'],
+            ['claude-design', 'Claude Design'],
             ['cursor/0.42', 'Cursor'],
             ['codex-cli', 'OpenAI Codex'],
             ['visual studio code', 'VS Code'],
