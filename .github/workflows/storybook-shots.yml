@@ -1,8 +1,9 @@
 name: storybook-shots
 
-# One-off check for the posthog-ai-copy-markdown branch: lint, format, typecheck, then Storybook
-# screenshots (after and before) and a clipboard check of each copy button. Lives on its own
-# orphan branch so none of PostHog's workflows run here.
+# One-off check for the posthog-ai-copy-markdown branch: lint and format, a static Storybook build of
+# the two stories that show the answer footers, screenshots plus a clipboard check of each copy
+# button, then the frontend typecheck. Lives on its own orphan branch so none of PostHog's
+# workflows run here.
 on:
     push:
         branches: [storybook-shots]
@@ -15,7 +16,12 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 120
         env:
-            CHANGED: frontend/src/scenes/max/messages/SuccessActions.tsx frontend/src/scenes/max/messages/quill/QuillSuccessActions.tsx products/posthog_ai/frontend/components/quill/QuillFooterButton.tsx
+            CHANGED: >-
+                frontend/src/scenes/max/messages/SuccessActions.tsx
+                frontend/src/scenes/max/messages/quill/QuillSuccessActions.tsx
+                products/posthog_ai/frontend/components/quill/QuillFooterButton.tsx
+                products/posthog_ai/frontend/components/TurnFeedbackActions.tsx
+                products/posthog_ai/frontend/components/quill/QuillTurnFeedbackActions.tsx
         steps:
             - uses: actions/checkout@v4
               with:
@@ -24,7 +30,7 @@ jobs:
               with:
                   repository: Chinmay1220/posthog
                   ref: posthog-ai-copy-markdown
-                  fetch-depth: 2
+                  fetch-depth: 3
                   path: posthog
             - uses: actions/setup-node@v4
               with:
@@ -32,7 +38,8 @@ jobs:
             - name: Install
               working-directory: posthog
               run: |
-                  git log --format="%h %s" -2
+                  mkdir -p /tmp/out /tmp/pw
+                  git log --format="%h %s" -3
                   npm i -g pnpm@11.28.5
                   pnpm install --frozen-lockfile
             - name: Lint and format
@@ -40,26 +47,45 @@ jobs:
               run: |
                   pnpm exec oxlint --quiet $CHANGED
                   pnpm exec oxfmt --check $CHANGED
-            - name: Typecheck
+            - name: Build Storybook
               working-directory: posthog
-              continue-on-error: true
-              timeout-minutes: 45
-              run: pnpm --filter=@posthog/frontend typescript:check
-            - name: Storybook screenshots and clipboard check
-              working-directory: posthog
+              timeout-minutes: 40
+              env:
+                  STORYBOOK_STORIES: frontend/src/scenes/max/PostHogAiQuillComparison.stories.tsx,products/posthog_ai/frontend/components/ThreadView.stories.tsx
               run: |
-                  STORYBOOK_STORIES=frontend/src/scenes/max/PostHogAiQuillComparison.stories.tsx nohup pnpm storybook >/tmp/sb.log 2>&1 &
-                  for _ in $(seq 1 900); do curl -sf http://localhost:6006/index.json >/dev/null && break; sleep 1; done
-                  curl -s http://localhost:6006/index.json | jq -r '.entries | keys[]'
-                  mkdir -p /tmp/pw /tmp/out
+                  set -o pipefail
+                  bin/turbo --filter=@posthog/storybook prepare 2>&1 | tail -15
+                  pnpm --filter=@posthog/storybook build 2>&1 | tee /tmp/out/build.log | tail -40
+                  jq -r '.entries | keys[]' common/storybook/dist/index.json
+            - name: Screenshots and clipboard check
+              working-directory: posthog
+              timeout-minutes: 30
+              run: |
+                  nohup pnpm --filter=@posthog/storybook exec http-server dist --port 6006 --silent >/tmp/out/http.log 2>&1 &
+                  for _ in $(seq 1 60); do curl -sf http://localhost:6006/index.json >/dev/null && break; sleep 1; done
+                  curl -sf http://localhost:6006/index.json >/dev/null
                   cd /tmp/pw && npm init -y >/dev/null && npm i playwright@1.56.1 >/dev/null && npx playwright install --with-deps chromium >/dev/null
                   cp "$GITHUB_WORKSPACE/tools/shot.mjs" /tmp/pw/
-                  cd /tmp/pw && node shot.mjs after
-                  cd "$GITHUB_WORKSPACE/posthog" && git checkout HEAD^ -- $CHANGED && sleep 60
-                  cd /tmp/pw && node shot.mjs before
-                  tail -20 /tmp/sb.log
+                  cd /tmp/pw && node shot.mjs
             - uses: actions/upload-artifact@v4
               if: always()
               with:
                   name: storybook-shots
                   path: /tmp/out
+            - name: Typecheck
+              working-directory: posthog
+              timeout-minutes: 45
+              run: |
+                  set -o pipefail
+                  pkill -f http-server || true
+                  sudo systemctl stop docker.socket docker.service containerd.service || true
+                  sync && echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+                  free -m
+                  code=0
+                  pnpm --filter=@posthog/frontend typescript:check 2>&1 | tail -40 || code=$?
+                  if [ "$code" = 75 ]; then
+                      echo "The memory headroom check refused; running the constrained mode it picks at 12 GiB directly."
+                      cd frontend && GOMEMLIMIT=6GiB pnpm exec tsgo --noEmit --checkers 1 2>&1 | tail -40
+                  else
+                      exit "$code"
+                  fi
