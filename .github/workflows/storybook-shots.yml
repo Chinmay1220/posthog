@@ -1,0 +1,65 @@
+name: storybook-shots
+
+# One-off check for the posthog-ai-copy-markdown branch: lint, format, typecheck, then Storybook
+# screenshots (after and before) and a clipboard check of each copy button. Lives on its own
+# orphan branch so none of PostHog's workflows run here.
+on:
+    push:
+        branches: [storybook-shots]
+
+permissions:
+    contents: read
+
+jobs:
+    shots:
+        runs-on: ubuntu-latest
+        timeout-minutes: 120
+        env:
+            CHANGED: frontend/src/scenes/max/messages/SuccessActions.tsx frontend/src/scenes/max/messages/quill/QuillSuccessActions.tsx products/posthog_ai/frontend/components/quill/QuillFooterButton.tsx
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  path: tools
+            - uses: actions/checkout@v4
+              with:
+                  repository: Chinmay1220/posthog
+                  ref: posthog-ai-copy-markdown
+                  fetch-depth: 2
+                  path: posthog
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: posthog/.nvmrc
+            - name: Install
+              working-directory: posthog
+              run: |
+                  git log --format="%h %s" -2
+                  npm i -g pnpm@11.28.5
+                  pnpm install --frozen-lockfile
+            - name: Lint and format
+              working-directory: posthog
+              run: |
+                  pnpm exec oxlint --quiet $CHANGED
+                  pnpm exec oxfmt --check $CHANGED
+            - name: Typecheck
+              working-directory: posthog
+              continue-on-error: true
+              timeout-minutes: 45
+              run: pnpm --filter=@posthog/frontend typescript:check
+            - name: Storybook screenshots and clipboard check
+              working-directory: posthog
+              run: |
+                  STORYBOOK_STORIES=frontend/src/scenes/max/PostHogAiQuillComparison.stories.tsx nohup pnpm storybook >/tmp/sb.log 2>&1 &
+                  for _ in $(seq 1 900); do curl -sf http://localhost:6006/index.json >/dev/null && break; sleep 1; done
+                  curl -s http://localhost:6006/index.json | jq -r '.entries | keys[]'
+                  mkdir -p /tmp/pw /tmp/out
+                  cd /tmp/pw && npm init -y >/dev/null && npm i playwright@1.56.1 >/dev/null && npx playwright install --with-deps chromium >/dev/null
+                  cp "$GITHUB_WORKSPACE/tools/shot.mjs" /tmp/pw/
+                  cd /tmp/pw && node shot.mjs after
+                  cd "$GITHUB_WORKSPACE/posthog" && git checkout HEAD^ -- $CHANGED && sleep 60
+                  cd /tmp/pw && node shot.mjs before
+                  tail -20 /tmp/sb.log
+            - uses: actions/upload-artifact@v4
+              if: always()
+              with:
+                  name: storybook-shots
+                  path: /tmp/out
