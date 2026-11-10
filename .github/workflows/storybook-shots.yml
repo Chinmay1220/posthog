@@ -51,9 +51,13 @@ jobs:
               working-directory: posthog
               timeout-minutes: 40
               env:
-                  STORYBOOK_STORIES: frontend/src/scenes/max/PostHogAiQuillComparison.stories.tsx,products/posthog_ai/frontend/components/ThreadView.stories.tsx
+                  # Run 42920818304 covered the 2.0 footers (comparison and ThreadView stories) and the
+                  # typecheck on this same commit; this run covers the LangGraph chat footers.
+                  STORYBOOK_STORIES: frontend/src/scenes/max/MaxTools.stories.tsx,frontend/src/scenes/max/CopyMarkdownDemo.stories.tsx
               run: |
                   set -o pipefail
+                  # Demo-only story, never committed: the finished SQL answer story in the quill skin.
+                  cp "$GITHUB_WORKSPACE/tools/CopyMarkdownDemo.stories.tsx" frontend/src/scenes/max/
                   bin/turbo --filter=@posthog/storybook prepare 2>&1 | tail -15
                   pnpm --filter=@posthog/storybook build 2>&1 | tee /tmp/out/build.log | tail -40
                   jq -r '.entries | keys[]' common/storybook/dist/index.json
@@ -69,26 +73,9 @@ jobs:
                   google-chrome --version
                   cp "$GITHUB_WORKSPACE/tools/shot.mjs" ./shot.mjs
                   node -e "console.log('playwright', require('playwright/package.json').version)" || true
-                  PW_CHANNEL=chrome timeout 1500 node shot.mjs
+                  SHOT_SET=legacy PW_CHANNEL=chrome timeout 1500 node shot.mjs
             - uses: actions/upload-artifact@v4
               if: always()
               with:
                   name: storybook-shots
                   path: /tmp/out
-            - name: Typecheck
-              working-directory: posthog
-              timeout-minutes: 45
-              run: |
-                  set -o pipefail
-                  pkill -f http-server || true
-                  sudo systemctl stop docker.socket docker.service containerd.service || true
-                  sync && echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
-                  free -m
-                  code=0
-                  pnpm --filter=@posthog/frontend typescript:check 2>&1 | tail -40 || code=$?
-                  if [ "$code" = 75 ]; then
-                      echo "The memory headroom check refused; running the constrained mode it picks at 12 GiB directly."
-                      cd frontend && GOMEMLIMIT=6GiB pnpm exec tsgo --noEmit --checkers 1 2>&1 | tail -40
-                  else
-                      exit "$code"
-                  fi

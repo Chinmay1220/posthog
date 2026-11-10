@@ -1,12 +1,11 @@
 // Screenshots of each PostHog AI answer footer, plus a clipboard read-back of every copy button.
-// Runs against a static Storybook build served on :6006. Usage: node shot.mjs
+// Runs against a static Storybook build served on :6006.
+// Usage: SHOT_SET=<sandbox|legacy> [PW_CHANNEL=chrome] node shot.mjs
 import { appendFileSync, writeFileSync } from 'fs'
 import { chromium } from 'playwright'
 
 const OUT = '/tmp/out'
 const ORIGIN = 'http://localhost:6006'
-const COMPARISON = 'scenes-app-posthog-ai-quill-comparison--side-by-side'
-const THREAD_VIEW = 'products-posthog-ai-threadview--message-footers'
 
 const t0 = Date.now()
 const log = (...args) => console.log(`[${Math.round((Date.now() - t0) / 1000)}s]`, ...args)
@@ -18,26 +17,82 @@ setTimeout(() => {
 const within = (promise, ms, what) =>
     Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`timed out: ${what}`)), ms))])
 
+function column(page, title) {
+    return page.locator('section').filter({ has: page.getByRole('heading', { name: title, exact: true }) })
+}
+
+// Each footer: its two copy buttons, an optional box that sets the crop's width, and whether its turn
+// has to be hovered before the footer shows.
+const SETS = {
+    // PostHog AI 2.0 (TurnFeedbackActions): quill in the comparison story, lemon in ThreadView.
+    sandbox: [
+        {
+            id: 'scenes-app-posthog-ai-quill-comparison--side-by-side',
+            ready: ['[data-attr="posthog-ai-turn-copy-markdown"]', 1],
+            footers: (page) => {
+                const box = column(page, 'PostHog AI 2.0 quill')
+                return [
+                    {
+                        name: 'sandbox-quill',
+                        box,
+                        plain: box.locator('[data-attr="posthog-ai-turn-copy"]').last(),
+                        markdown: box.locator('[data-attr="posthog-ai-turn-copy-markdown"]').last(),
+                        hoverToReveal: true,
+                    },
+                ]
+            },
+        },
+        {
+            id: 'products-posthog-ai-threadview--message-footers',
+            ready: ['[data-attr="posthog-ai-turn-copy-markdown"]', 1],
+            footers: (page) => [
+                {
+                    name: 'sandbox-lemon',
+                    box: page.locator('#storybook-root div.w-180').or(page.locator('#storybook-root > *')).first(),
+                    plain: page.locator('[data-attr="posthog-ai-turn-copy"]').first(),
+                    markdown: page.locator('[data-attr="posthog-ai-turn-copy-markdown"]').first(),
+                },
+            ],
+        },
+    ],
+    // The LangGraph chat (SuccessActions), on a finished answer with a SQL code block, in each skin.
+    legacy: [
+        { id: 'scenes-app-posthog-ai-tools--thread-with-sql-query-overflow', name: 'legacy-lemon' },
+        { id: 'demo-copy-markdown--quill', name: 'legacy-quill' },
+    ].map(({ id, name }) => ({
+        id,
+        ready: ['[aria-label="Copy answer as Markdown"]', 1],
+        footers: (page) => [
+            {
+                name,
+                plain: page.locator('[aria-label="Copy answer"]').last(),
+                markdown: page.locator('[aria-label="Copy answer as Markdown"]').last(),
+            },
+        ],
+    })),
+}
+const STORIES = SETS[process.env.SHOT_SET ?? 'sandbox']
+
 // PW_CHANNEL=chrome uses the runner's preinstalled Google Chrome instead of a downloaded browser.
 const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {})
 log('browser', browser.version())
 
-async function open(storyId, theme, readySelector, readyCount) {
+async function open(story, theme) {
     const context = await browser.newContext({ viewport: { width: 1920, height: 1200 }, deviceScaleFactor: 2 })
     await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: ORIGIN })
     const page = await context.newPage()
-    const tag = `[${storyId} ${theme}]`
+    const tag = `[${story.id} ${theme}]`
     page.on('console', (m) => appendFileSync(`${OUT}/browser.log`, `${tag} ${m.type()}: ${m.text()}\n`))
     page.on('pageerror', (e) => appendFileSync(`${OUT}/browser.log`, `${tag} pageerror: ${e.message}\n`))
-    log('open', storyId, theme)
-    await page.goto(`${ORIGIN}/iframe.html?viewMode=story&id=${storyId}&globals=theme:${theme}`, {
+    log('open', story.id, theme)
+    await page.goto(`${ORIGIN}/iframe.html?viewMode=story&id=${story.id}&globals=theme:${theme}`, {
         waitUntil: 'load',
         timeout: 120000,
     })
     try {
         await page.waitForFunction(
             ([selector, count]) => document.querySelectorAll(selector).length >= count,
-            [readySelector, readyCount],
+            story.ready,
             { timeout: 180000 }
         )
     } catch (e) {
@@ -59,50 +114,6 @@ async function open(storyId, theme, readySelector, readyCount) {
     ).catch((e) => [e.message])
     log(tag, 'copy controls:', JSON.stringify(names))
     return { context, page }
-}
-
-function column(page, title) {
-    return page.locator('section').filter({ has: page.getByRole('heading', { name: title, exact: true }) })
-}
-
-// Each footer: where it is, its two copy buttons, and the box to crop the screenshot to.
-function comparisonFooters(page) {
-    const legacyLemon = column(page, 'PostHog AI now')
-    const legacyQuill = column(page, 'PostHog AI quill')
-    const sandboxQuill = column(page, 'PostHog AI 2.0 quill')
-    return [
-        {
-            name: 'legacy-lemon',
-            box: legacyLemon,
-            plain: legacyLemon.locator('[aria-label="Copy answer"]').last(),
-            markdown: legacyLemon.locator('[aria-label="Copy answer as Markdown"]').last(),
-        },
-        {
-            name: 'legacy-quill',
-            box: legacyQuill,
-            plain: legacyQuill.locator('[aria-label="Copy answer"]').last(),
-            markdown: legacyQuill.locator('[aria-label="Copy answer as Markdown"]').last(),
-        },
-        {
-            name: 'sandbox-quill',
-            box: sandboxQuill,
-            plain: sandboxQuill.locator('[data-attr="posthog-ai-turn-copy"]').last(),
-            markdown: sandboxQuill.locator('[data-attr="posthog-ai-turn-copy-markdown"]').last(),
-            hoverToReveal: true,
-        },
-    ]
-}
-
-function threadViewFooters(page) {
-    const box = page.locator('#storybook-root div.w-180').or(page.locator('#storybook-root > *')).first()
-    return [
-        {
-            name: 'sandbox-lemon',
-            box,
-            plain: page.locator('[data-attr="posthog-ai-turn-copy"]').first(),
-            markdown: page.locator('[data-attr="posthog-ai-turn-copy-markdown"]').first(),
-        },
-    ]
 }
 
 async function bringIntoView(page, footer) {
@@ -128,22 +139,26 @@ async function bringIntoView(page, footer) {
 
 async function crop(page, footer, file) {
     const btn = await footer.markdown.boundingBox()
-    const box = await footer.box.boundingBox()
-    if (!btn || !box) {
+    if (!btn) {
         throw new Error('no bounding box')
     }
-    const y = Math.max(0, btn.y - 200)
-    await page.screenshot({ path: file, clip: { x: Math.max(0, box.x - 8), y, width: box.width + 16, height: btn.y - y + 70 } })
+    const y = Math.max(0, btn.y - 220)
+    const height = btn.y - y + 70
+    if (footer.box) {
+        const box = await footer.box.boundingBox()
+        await page.screenshot({ path: file, clip: { x: Math.max(0, box.x - 8), y, width: box.width + 16, height } })
+    } else {
+        // No container to measure: a window from just left of the footer across the answer.
+        const x = Math.max(0, btn.x - 90)
+        await page.screenshot({ path: file, clip: { x, y, width: Math.min(860, 1920 - x), height } })
+    }
 }
 
 async function shoot(theme) {
-    for (const [storyId, footersOf, readySelector, readyCount] of [
-        [COMPARISON, comparisonFooters, '[aria-label="Copy answer as Markdown"]', 3],
-        [THREAD_VIEW, threadViewFooters, '[data-attr="posthog-ai-turn-copy-markdown"]', 1],
-    ]) {
-        const { context, page } = await open(storyId, theme, readySelector, readyCount)
-        await page.screenshot({ path: `${OUT}/${storyId}-${theme}.png`, fullPage: true }).catch((e) => log(e.message))
-        for (const footer of footersOf(page)) {
+    for (const story of STORIES) {
+        const { context, page } = await open(story, theme)
+        await page.screenshot({ path: `${OUT}/${story.id}-${theme}.png`, fullPage: true }).catch((e) => log(e.message))
+        for (const footer of story.footers(page)) {
             try {
                 await bringIntoView(page, footer)
                 await footer.markdown.hover({ timeout: 15000 })
@@ -160,12 +175,9 @@ async function shoot(theme) {
 
 async function clipboardCheck() {
     const results = []
-    for (const [storyId, footersOf, readySelector, readyCount] of [
-        [COMPARISON, comparisonFooters, '[aria-label="Copy answer as Markdown"]', 3],
-        [THREAD_VIEW, threadViewFooters, '[data-attr="posthog-ai-turn-copy-markdown"]', 1],
-    ]) {
-        const { context, page } = await open(storyId, 'light', readySelector, readyCount)
-        for (const footer of footersOf(page)) {
+    for (const story of STORIES) {
+        const { context, page } = await open(story, 'light')
+        for (const footer of story.footers(page)) {
             for (const kind of ['plain', 'markdown']) {
                 const name = `${footer.name} ${kind}`
                 try {
