@@ -64,9 +64,12 @@ jobs:
                   nohup pnpm --filter=@posthog/storybook exec http-server dist --port 6006 --silent >/tmp/out/http.log 2>&1 &
                   for _ in $(seq 1 60); do curl -sf http://localhost:6006/index.json >/dev/null && break; sleep 1; done
                   curl -sf http://localhost:6006/index.json >/dev/null
-                  cd /tmp/pw && npm init -y >/dev/null && npm i playwright@1.56.1 >/dev/null && npx playwright install --with-deps chromium >/dev/null
-                  cp "$GITHUB_WORKSPACE/tools/shot.mjs" /tmp/pw/
-                  cd /tmp/pw && node shot.mjs
+                  # The repo root depends on playwright, so the script resolves that copy from here, and
+                  # drives the runner's own Chrome: no browser download.
+                  google-chrome --version
+                  cp "$GITHUB_WORKSPACE/tools/shot.mjs" ./shot.mjs
+                  node -e "console.log('playwright', require('playwright/package.json').version)" || true
+                  PW_CHANNEL=chrome timeout 1500 node shot.mjs
             - uses: actions/upload-artifact@v4
               if: always()
               with:

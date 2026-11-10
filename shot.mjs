@@ -18,7 +18,9 @@ setTimeout(() => {
 const within = (promise, ms, what) =>
     Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`timed out: ${what}`)), ms))])
 
-const browser = await chromium.launch()
+// PW_CHANNEL=chrome uses the runner's preinstalled Google Chrome instead of a downloaded browser.
+const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {})
+log('browser', browser.version())
 
 async function open(storyId, theme, readySelector, readyCount) {
     const context = await browser.newContext({ viewport: { width: 1920, height: 1200 }, deviceScaleFactor: 2 })
