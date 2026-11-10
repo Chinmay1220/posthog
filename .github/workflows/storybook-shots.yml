@@ -1,9 +1,10 @@
 name: storybook-shots
 
-# One-off check for the posthog-ai-copy-markdown branch: lint and format, a static Storybook build of
-# the two stories that show the answer footers, screenshots plus a clipboard check of each copy
-# button, then the frontend typecheck. Lives on its own orphan branch so none of PostHog's
-# workflows run here.
+# One-off demo for the posthog-ai-copy-markdown branch: a static Storybook build of the stories that
+# show the PostHog AI answer footers, built once from the base commit (before) and once from the
+# branch (after), with screenshots of each footer and, for the branch, a clipboard check of every
+# copy button. Run 42920818304 ran lint, format and the typecheck on the same branch commit. Lives on
+# its own orphan branch so none of PostHog's workflows run here.
 on:
     push:
         branches: [storybook-shots]
@@ -13,15 +14,12 @@ permissions:
 
 jobs:
     shots:
+        strategy:
+            fail-fast: false
+            matrix:
+                variant: [before, after]
         runs-on: ubuntu-latest
-        timeout-minutes: 120
-        env:
-            CHANGED: >-
-                frontend/src/scenes/max/messages/SuccessActions.tsx
-                frontend/src/scenes/max/messages/quill/QuillSuccessActions.tsx
-                products/posthog_ai/frontend/components/quill/QuillFooterButton.tsx
-                products/posthog_ai/frontend/components/TurnFeedbackActions.tsx
-                products/posthog_ai/frontend/components/quill/QuillTurnFeedbackActions.tsx
+        timeout-minutes: 60
         steps:
             - uses: actions/checkout@v4
               with:
@@ -29,8 +27,8 @@ jobs:
             - uses: actions/checkout@v4
               with:
                   repository: Chinmay1220/posthog
-                  ref: posthog-ai-copy-markdown
-                  fetch-depth: 3
+                  # before: the branch's merge base on master. after: the branch head.
+                  ref: ${{ matrix.variant == 'before' && '7f24894b5327859a231ed01e5992f75b31e164eb' || 'posthog-ai-copy-markdown' }}
                   path: posthog
             - uses: actions/setup-node@v4
               with:
@@ -38,28 +36,21 @@ jobs:
             - name: Install
               working-directory: posthog
               run: |
-                  mkdir -p /tmp/out /tmp/pw
-                  git log --format="%h %s" -3
+                  mkdir -p /tmp/out
+                  git log --format="%h %s" -1
                   npm i -g pnpm@11.28.5
                   pnpm install --frozen-lockfile
-            - name: Lint and format
-              working-directory: posthog
-              run: |
-                  pnpm exec oxlint --quiet $CHANGED
-                  pnpm exec oxfmt --check $CHANGED
             - name: Build Storybook
               working-directory: posthog
               timeout-minutes: 40
               env:
-                  # Run 42920818304 covered the 2.0 footers (comparison and ThreadView stories) and the
-                  # typecheck on this same commit; this run covers the LangGraph chat footers.
-                  STORYBOOK_STORIES: frontend/src/scenes/max/MaxTools.stories.tsx,frontend/src/scenes/max/CopyMarkdownDemo.stories.tsx
+                  STORYBOOK_STORIES: frontend/src/scenes/max/PostHogAiQuillComparison.stories.tsx,products/posthog_ai/frontend/components/ThreadView.stories.tsx,frontend/src/scenes/max/MaxTools.stories.tsx,frontend/src/scenes/max/CopyMarkdownDemo.stories.tsx
               run: |
                   set -o pipefail
                   # Demo-only story, never committed: the finished SQL answer story in the quill skin.
                   cp "$GITHUB_WORKSPACE/tools/CopyMarkdownDemo.stories.tsx" frontend/src/scenes/max/
                   bin/turbo --filter=@posthog/storybook prepare 2>&1 | tail -15
-                  pnpm --filter=@posthog/storybook build 2>&1 | tee /tmp/out/build.log | tail -40
+                  pnpm --filter=@posthog/storybook build 2>&1 | tee /tmp/out/build.log | tail -20
                   jq -r '.entries | keys[]' common/storybook/dist/index.json
             - name: Screenshots and clipboard check
               working-directory: posthog
@@ -70,12 +61,10 @@ jobs:
                   curl -sf http://localhost:6006/index.json >/dev/null
                   # The repo root depends on playwright, so the script resolves that copy from here, and
                   # drives the runner's own Chrome: no browser download.
-                  google-chrome --version
                   cp "$GITHUB_WORKSPACE/tools/shot.mjs" ./shot.mjs
-                  node -e "console.log('playwright', require('playwright/package.json').version)" || true
-                  SHOT_SET=legacy PW_CHANNEL=chrome timeout 1500 node shot.mjs
+                  VARIANT=${{ matrix.variant }} PW_CHANNEL=chrome timeout 1500 node shot.mjs
             - uses: actions/upload-artifact@v4
               if: always()
               with:
-                  name: storybook-shots
+                  name: shots-${{ matrix.variant }}
                   path: /tmp/out
